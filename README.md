@@ -62,7 +62,7 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
         }
     }
 1. Transforms to slabs (mm unit) `{section_name}_coarse_transform_to_slab_mm_{yyyymmdd}.json`
-    * subset_label: accounts for sections split into multiple pieces that require multiple transforms. Cells are mapped to `subset_label` column in `{section_name}_coarse_transform_slab_coordinates_{yyyymmdd}.csv`. The mask associated with each subset label is included as `{section_name}_subset_mask_{subset_label}.npy`
+    * subset_label: accounts for sections split into multiple chunks each with independent an transform. Cells are mapped to `subset_label` column in `{section_name}_coarse_transform_slab_coordinates_{yyyymmdd}.csv`. The mask associated with each subset label is included as `{section_name}_subset_mask_{subset_label}.npy`
        * Valid values: int count from 0 or 'nan' if section does not have subset labels    
     * 2D affine
         * **input**: microscope coordinates (µm units, origin bottom-left, x,y order)
@@ -133,5 +133,5 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
         * Row count matches the input mapping for registration table
 1. QC registration to slab `{section_name}_coarse_registration_slab_qc_{yyyymmdd}.png`  
 1. QC registration to block `{section_name}_registration_block_qc_{yyyymmdd}.png`  
-1. OPTIONAL: Subset masks (numerous)`{section_name}_subset_mask_{subset_label}_{spacing}_um_per_px.npy`: OPTIONAL
+1. OPTIONAL: Subset masks (numerous)`{section_name}_subset_mask_{subset_label}_{spacing}_um_per_px.npy`:
     * Applies over microscope coordinates with a downscale factor denote by `{spacing}_um_per_px` where downscaled_coordinates = coordinates / {spacing}
