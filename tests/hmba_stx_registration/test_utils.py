@@ -107,21 +107,83 @@ class TestCreateRunManifest:
         with tempfile.TemporaryDirectory() as tmpdir:
             out = Path(tmpdir) / "manifest.json"
             create_run_manifest_json(
-                ver=1.0,
+                ver="0.1.0",
+                date="20260213",
+                specimen_name="QM24.50.002.CX.51.01.05.02",
                 input_files=["input_a.csv", "input_b.json"],
                 output_files=["/some/path/output.png"],
                 args={"key": "value"},
                 out_path=out,
             )
             data = json.loads(out.read_text())
-            assert data["hmba_stx_registration version"] == 1.0
+            assert data["hmba_stx_registration_version"] == "0.1.0"
+            assert data["date"] == "20260213"
+            assert data["specimen_name"] == "QM24.50.002.CX.51.01.05.02"
             assert "input_a.csv" in data["input_files"]
             assert data["output_files"] == ["output.png"]
             assert data["args"] == {"key": "value"}
 
+    def test_schema_version_present(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir) / "m.json"
+            create_run_manifest_json(
+                ver="1.0.0", date="20260101",
+                specimen_name="X", input_files=[], output_files=[],
+                out_path=out,
+            )
+            data = json.loads(out.read_text())
+            assert "schema_version" in data
+            assert data["schema_version"] == "1.0"
+
+    def test_version_stored_as_string(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir) / "m.json"
+            create_run_manifest_json(
+                ver="0.2", date="20260101",
+                specimen_name="X", input_files=[], output_files=[],
+                out_path=out,
+            )
+            data = json.loads(out.read_text())
+            assert isinstance(data["hmba_stx_registration_version"], str)
+
     def test_default_args(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             out = Path(tmpdir) / "m.json"
-            create_run_manifest_json(1.0, [], [], out_path=out)
+            create_run_manifest_json(
+                ver="1.0", date="20260101",
+                specimen_name="X", input_files=[], output_files=[],
+                out_path=out,
+            )
             data = json.loads(out.read_text())
             assert data["args"] == {}
+
+    def test_required_keys(self):
+        """Manifest must contain all keys defined in the schema."""
+        required = {
+            "schema_version", "hmba_stx_registration_version",
+            "date", "specimen_name",
+            "input_files", "output_files", "args",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir) / "m.json"
+            create_run_manifest_json(
+                ver="0.1.0", date="20260213",
+                specimen_name="S", input_files=["a"], output_files=["b"],
+                out_path=out,
+            )
+            data = json.loads(out.read_text())
+            assert required == set(data.keys())
+
+    def test_output_files_basenames_only(self):
+        """Output files should be stored as basenames, not full paths."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir) / "m.json"
+            create_run_manifest_json(
+                ver="0.1.0", date="20260213", specimen_name="S",
+                input_files=["/long/path/to/input.csv"],
+                output_files=["/long/path/to/output.png"],
+                out_path=out,
+            )
+            data = json.loads(out.read_text())
+            assert data["input_files"] == ["input.csv"]
+            assert data["output_files"] == ["output.png"]

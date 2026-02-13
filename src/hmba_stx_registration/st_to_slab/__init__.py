@@ -327,7 +327,7 @@ def process_barcode(
     table_label: str,
     um_per_px: float,
     date: str,
-    version: float,
+    version: str,
     sync_to_s3: bool = False,
 ) -> Optional[dict]:
     """Process one barcode end-to-end, producing all Stage-2 outputs.
@@ -359,8 +359,8 @@ def process_barcode(
         Microns per pixel.
     date : str
         Date string (``yyyymmdd``) for output filenames.
-    version : float
-        Version number stored in the run manifest.
+    version : str
+        Version string stored in the run manifest (e.g. ``"0.1.0"``).
     sync_to_s3 : bool
         If ``True``, sync results to S3 after processing.
 
@@ -473,6 +473,8 @@ def process_barcode(
         run_manifest_path = results_path / f"{specimen_name}_run_manifest_{date}.json"
         create_run_manifest_json(
             ver=version,
+            date=date,
+            specimen_name=specimen_name,
             input_files=input_files,
             output_files=output_files,
             args={"um_per_px": um_per_px, "table_label": table_label},

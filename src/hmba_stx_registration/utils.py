@@ -166,8 +166,14 @@ def cluster_coordinates(
 # Run manifest
 # ---------------------------------------------------------------------------
 
+# Current manifest schema version – bump when the schema changes.
+_MANIFEST_SCHEMA_VERSION = "1.0"
+
+
 def create_run_manifest_json(
-    ver: float,
+    ver: str,
+    date: str,
+    specimen_name: str,
     input_files: List[Union[str, Path]],
     output_files: List[Union[str, Path]],
     args: Optional[Dict] = None,
@@ -181,8 +187,12 @@ def create_run_manifest_json(
 
     Parameters
     ----------
-    ver : float
-        Version of ``hmba_stx_registration``.
+    ver : str
+        Version of ``hmba_stx_registration`` (e.g. ``"0.1.0"``).
+    date : str
+        Run date as ``yyyymmdd``.
+    specimen_name : str
+        Section identifier (e.g. ``"QM24.50.002.CX.51.01.05.02"``).
     input_files, output_files : list of str/Path
         Files consumed / produced by the run.
     args : dict, optional
@@ -191,7 +201,10 @@ def create_run_manifest_json(
         Destination path for the manifest JSON.
     """
     manifest = {
-        "hmba_stx_registration version": ver,
+        "schema_version": _MANIFEST_SCHEMA_VERSION,
+        "hmba_stx_registration_version": str(ver),
+        "date": date,
+        "specimen_name": specimen_name,
         "input_files": [str(Path(f).name) for f in input_files],
         "output_files": [str(Path(f).name) for f in output_files],
         "args": args if args is not None else {},
