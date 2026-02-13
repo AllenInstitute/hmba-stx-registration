@@ -29,9 +29,13 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
             QM24.50.002.CX.48.05.03 <- QM24.50.002.CX.48.05.02.02
             QM24.50.002.CX.50.05.01 <- QM24.50.002.CX.50.05.03.02
             QM24.50.002.CX.50.06.05 <- QM24.50.002.CX.50.06.03.02
+    * This is currently implemented by duplicating the image files with the renamed section name and does not have any code that treats these differently.
 1. Multiple sections per set (if ST reimaging is performed)
 1. Section split into multiple chunks with each chunk requiring multiple independent transforms to the slab
-    * Mask each chunk into individual subset_mask
+    * If blockface is split:
+        * Subset blockface denoted by {section_name}_{subset_label}.png
+        * Subset cells by with clustering and label clusters to map to the subset_label of the blockfaces
+        * Each blockface subset has its own transform which gets applied to each subset of cells
     * Intersect mask with cells to map cells to `subset_label`
     * Transform for each `subset_label` stored in the transform_to_slab_mm.json file
 
@@ -63,7 +67,7 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
     }
 1. Transforms to slabs (mm unit) `{section_name}_coarse_transform_to_slab_mm_{yyyymmdd}.json`
     * subset_label: accounts for sections split into multiple chunks each with independent an transform. Cells are mapped to `subset_label` column in `{section_name}_coarse_transform_slab_coordinates_{yyyymmdd}.csv`. The mask associated with each subset label is included as `{section_name}_subset_mask_{subset_label}.npy`
-       * Valid values: int count from 0 or 'nan' if section does not have subset labels    
+       * Valid values: int count from 0 or 'nan' if section does not have subset labels
     * 2D affine
         * **input**: microscope coordinates (µm units, origin bottom-left, x,y order)
         * **output**: slab coordinates (mm units, origin top-left, x,y order)
@@ -119,19 +123,6 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
             ]
         }
     ]
-1. slab coordinates table`{section_name}_coarse_transform_slab_coordinates_{yyyymmdd}.csv`  
-    * **index**: cell_id
-    * **columns**: coordinates origin top-left
-
-        | Column      | Units | Description                |
-        | ----------- | ----- | -------------------------- |
-        | `x_slab_mm` | mm    | X coordinate in slab space |
-        | `y_slab_mm` | mm    | Y coordinate in slab space |
-        | `x_slab_um` | µm    | Same as `x_slab_mm * 1000` |
-        | `y_slab_um` | µm    | Same as `y_slab_mm * 1000` |
-    * **Invariants:**
-        * Row count matches the input mapping for registration table
-1. QC registration to slab `{section_name}_coarse_registration_slab_qc_{yyyymmdd}.png`  
-1. QC registration to block `{section_name}_registration_block_qc_{yyyymmdd}.png`  
-1. OPTIONAL: Subset masks (numerous)`{section_name}_subset_mask_{subset_label}_{spacing}_um_per_px.npy`:
-    * Applies over microscope coordinates with a downscale factor denote by `{spacing}_um_per_px` where downscaled_coordinates = coordinates / {spacing}
+1. QC registration to slab `{section_name}_coarse_registration_slab_qc_{yyyymmdd}.png` or `{section_name}_{subset_label)_coarse_registration_slab_qc_{yyyymmdd}.png`
+1. QC registration to block `{section_name}_registration_block_qc_{yyyymmdd}.png`
+1. OPTIONAL: subset_label mapping to cells csv `{section_name}_subset_label.csv`
