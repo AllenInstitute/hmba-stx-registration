@@ -89,10 +89,11 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
         {
             "source": "QM24.50.002.CX.51.01.05.02",
             "subset_label": 0,
-            "input_units": "um",
-            "output_units": "mm",
-            "dimensional_ordering": "xy",
-            "origin": "topleft",
+            "source_unit": "micrometer",
+            "source_origin": "bottomleft",
+            "target_unit": "millimeter",
+            "target_origin": "topleft",
+            "axis_order": "xy",
             "transform": [
                 [
                     0.03803254687122138,
@@ -114,10 +115,11 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
         {
             "source": "QM24.50.002.CX.51.01.05.02",
             "subset_label": 1,
-            "input_units": "um",
-            "output_units": "mm",
-            "dimensional_ordering": "xy",
-            "origin": "topleft",
+            "source_unit": "micrometer",
+            "source_origin": "bottomleft",
+            "target_unit": "millimeter",
+            "target_origin": "topleft",
+            "axis_order": "xy",
             "transform": [
                 [
                     0.02510127262955611,
