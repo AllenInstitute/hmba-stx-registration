@@ -367,7 +367,7 @@ class TestProcessBarcode:
 
         metadata = pd.DataFrame({
             "barcode": [barcode],
-            "donor": ["QM"],
+            "donor": ["QM.50.002"],
             "division": ["50"],
             "slab": ["51"],
             "block": ["01"],

@@ -42,29 +42,35 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
 ## Outputs
 1. Run manifest 
 `{section_name}_run_manifest_{yyyymmdd}.json`
-    * hmba_stx_registration version
-    * input files: list of filenames inputted
-    * output files: list of filenames outputted
+    * `schema_version` — manifest schema version (currently `"1.0"`); bump when the schema changes
+    * `hmba_stx_registration_version` — package version string (e.g. `"0.1.0"`)
+    * `date` — run date as `yyyymmdd`
+    * `specimen_name`
+    * `input_files` — list of input filenames
+    * `output_files` — list of output filenames
+    * `args` — dictionary of parameters used in the run
 
     * Example file:
-    ```
+    ```json
     {
-        "hmba_stx_registration version": 1.0,
+        "schema_version": "1.0",
+        "hmba_stx_registration_version": "0.1.0",
+        "date": "20260213",
+        "specimen_name": "QM24.50.002.CX.51.01.05.02",
         "input_files": [
-            "QM24.50.002.CX.51.01.05.02_mapping_for_registration_20250612.csv",
-            "QM24.50.002.CX.51.01.05.02_column_names_for_registration_20250612.json"
+            "QM24.50.002.CX.51.01.05.02_mapping_for_registration_20260213.csv"
         ],
         "output_files": [
-            "QM24.50.002.CX.51.01.05.02_coarse_registration_qc_20260130.png",
-            "QM24.50.002.CX.51.01.05.02_coarse_transform_slab_coordinates.csv",
-            "QM24.50.002.CX.51.01.05.02_coarse_transform_to_slab_mm.json",
-            "QM24.50.002.CX.51.01.05.02_registration_qc.png"
-        ]
+            "QM24.50.002.CX.51.01.05.02_coarse_transform_to_slab_mm_20260213.json",
+            "QM24.50.002.CX.51.01.05.02_registration_block_qc_20260213.png",
+            "QM24.50.002.CX.51.01.05.02_coarse_registration_slab_qc_20260213.png"
+        ],
         "args": {
-            mockarg_a: mockval
-            mockarg_b: mockval
+            "um_per_px": 20,
+            "table_label": "supercluster_term_name"
         }
     }
+    ```
 1. Transforms to slabs (mm unit) `{section_name}_coarse_transform_to_slab_mm_{yyyymmdd}.json`
     * subset_label: accounts for sections split into multiple chunks each with independent an transform. Cells are mapped to `subset_label` column in `{section_name}_coarse_transform_slab_coordinates_{yyyymmdd}.csv`. The mask associated with each subset label is included as `{section_name}_subset_mask_{subset_label}.npy`
        * Valid values: int count from 0 or 'nan' if section does not have subset labels
@@ -83,6 +89,10 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
         {
             "source": "QM24.50.002.CX.51.01.05.02",
             "subset_label": 0,
+            "input_units": "um",
+            "output_units": "mm",
+            "dimensional_ordering": "xy",
+            "origin": "topleft",
             "transform": [
                 [
                     0.03803254687122138,
@@ -104,6 +114,10 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
         {
             "source": "QM24.50.002.CX.51.01.05.02",
             "subset_label": 1,
+            "input_units": "um",
+            "output_units": "mm",
+            "dimensional_ordering": "xy",
+            "origin": "topleft",
             "transform": [
                 [
                     0.02510127262955611,
