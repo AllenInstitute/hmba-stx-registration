@@ -27,13 +27,16 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from hmba_stx_registration import Specimen
 
 from ..svg_utils import (
     aggregate_affine,
@@ -318,21 +321,19 @@ def plot_coarse_registration_slab_qc(
 # ---------------------------------------------------------------------------
 
 def process_barcode(
-    barcode: str,
-    metadata_df: pd.DataFrame,
+    specimen: Specimen,
     bf_affines: Dict[str, np.ndarray],
     slab_imgs: Dict[int, np.ndarray],
     transforms_path: Path,
-    barcodes_path: Path,
-    table_label: str,
     um_per_px: float,
     date: str,
     version: str,
     sync_to_s3: bool = False,
+    sync_dryrun: bool = True,
 ) -> Optional[dict]:
     """Process one barcode end-to-end, producing all Stage-2 outputs.
 
-    Outputs written to ``{barcodes_path}/{barcode}/registration_results_{date}/``:
+    Outputs written to ``{base_barcodes_path}/{barcode}/registration_results_{date}/``:
 
     1. ``{section}_coarse_transform_to_slab_mm_{date}.json``
     2. ``{section}_registration_block_qc_{date}.png``
@@ -341,20 +342,15 @@ def process_barcode(
 
     Parameters
     ----------
-    barcode : str
-        Barcode identifier.
-    metadata_df : pd.DataFrame
-        Metadata table.
+    specimen : Specimen
+        Specimen object encapsulating the barcode, its metadata, and the
+        base barcodes path.
     bf_affines : dict
         Blockface-to-slab affines (pixel units).
     slab_imgs : dict
         Slab images keyed by integer slab id.
     transforms_path : Path
         Directory with ``*_sptx_to_bf_affine.npy`` files and ``qc/`` subfolder.
-    barcodes_path : Path
-        Root directory containing per-barcode folders.
-    table_label : str
-        Column name for cell-type labels.
     um_per_px : float
         Microns per pixel.
     date : str
@@ -363,6 +359,8 @@ def process_barcode(
         Version string stored in the run manifest (e.g. ``"0.1.0"``).
     sync_to_s3 : bool
         If ``True``, sync results to S3 after processing.
+    sync_dryrun : bool
+        If ``True``, S3 sync is a dry run only.
 
     Returns
     -------
@@ -370,20 +368,26 @@ def process_barcode(
         Summary with ``barcode``, ``specimen_name``, ``transform_manifest``,
         ``output_files``.  ``None`` on early skip.
     """
-    mm_per_px = um_per_px / 1000
-    specimen_name = get_specimen_name_from_barcode(barcode, metadata_df)
-    if specimen_name is None:
-        return None
+    barcode = specimen.barcode
+    specimen_name = specimen.specimen_name
+    barcode_path = specimen.barcode_path
 
-    barcode_path = barcodes_path / barcode
+    mm_per_px = um_per_px / 1000
     results_path = barcode_path / f"registration_results_{date}"
     input_files: List[Path] = []
     output_files: List[Path] = []
 
+    # Build a single-row metadata DataFrame for barcode_transform_to_slab
+    metadata_row = pd.DataFrame([{
+        "barcode": barcode,
+        "specimen_set_name": specimen.specimen_set_name,
+        "section": specimen.metadata["section"],
+    }])
+
     # 1. Compute transform chain
     try:
         transform_meta = barcode_transform_to_slab(
-            barcode, metadata_df, bf_affines, transforms_path, um_per_px,
+            barcode, metadata_row, bf_affines, transforms_path, um_per_px,
         )
         if transform_meta is None:
             logger.info("[%s] No transforms computed, skipping", barcode)
@@ -394,7 +398,7 @@ def process_barcode(
 
     # 2. Load cell table
     try:
-        slab_id = int(metadata_df.loc[metadata_df.barcode == barcode, "slab"].values[0])
+        slab_id = int(specimen.metadata["slab"])
         table_path = next(barcode_path.glob(f"{specimen_name}_mapping_for_registration_*.csv"))
         input_files.append(table_path)
 
@@ -402,6 +406,8 @@ def process_barcode(
             col_names_path = next(
                 barcode_path.glob(f"{specimen_name}_column_names_for_registration_*.json"),
             )
+            col_names = json.load(open(col_names_path, 'r'))
+            table_label = col_names[0]
             input_files.append(col_names_path)
         except StopIteration:
             logger.info("[%s] No column_names_for_registration JSON found", barcode)
@@ -492,7 +498,7 @@ def process_barcode(
                 bucket="hmba-macaque-wg-802451596237-us-west-2",
                 s3_dir=f"hmba_aim_2/Xenium/QM24.50.002/{barcode}/registration_results_{date}",
                 profile="storage",
-                dryrun=False,
+                dryrun=sync_dryrun,
                 delete=False,
             )
             logger.info("[%s] Synced to S3", barcode)

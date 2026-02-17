@@ -19,6 +19,11 @@ The registration pipeline:
 Public API
 ----------
 - ``register_cells_to_blockface``  – main entry point
+- ``create_density_image``         – build density images from cell table
+- ``coarse_alignment``             – rotation search + phase-correlation
+- ``sitk_affine_refinement``       – SimpleITK affine refinement
+- ``apply_affine_to_coordinates``  – apply combined affine to cell coords
+- ``save_qc_figure``               – 6-panel QC figure
 - ``compute_wm_gm_density``       – helper exposed for testing / reuse
 - ``rotation_search``             – brute-force rotation finder
 - ``rotate_and_phase_correlate``   – manual rotation + phase-correlation
@@ -326,28 +331,18 @@ def rotate_and_phase_correlate(
 
 
 # ---------------------------------------------------------------------------
-# Main registration function
+# Sub-functions (extracted from register_cells_to_blockface)
 # ---------------------------------------------------------------------------
 
-def register_cells_to_blockface(
+def create_density_image(
     cells_table: pd.DataFrame,
     blockface_img_path: Path,
-    specimen_name: str,
-    transforms_out_path: Path,
-    qc_path: Path,
     table_label: str = "supercluster_term_name",
     um_per_px: float = 20,
-    rotation: Optional[float] = None,
     gamma: float = 1.0,
     kernel_px: int = 5,
-) -> np.ndarray:
-    """Register spatial-TX cells to a blockface image and save outputs.
-
-    The function:
-    1. Builds a WM/GM density image from cell-type labels.
-    2. Finds the best rotation (or uses a provided one) via phase correlation.
-    3. Refines the alignment with a SimpleITK affine registration.
-    4. Saves the combined 3×3 affine and a 6-panel QC image.
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build WM/GM density and blockface images for registration.
 
     Parameters
     ----------
@@ -355,18 +350,10 @@ def register_cells_to_blockface(
         Cell table with ``center_x``, ``center_y``, and *table_label*.
     blockface_img_path : Path
         Path to the blockface PNG (RGBA expected).
-    specimen_name : str
-        Identifier used for output filenames.
-    transforms_out_path : Path
-        Directory for the ``.npy`` affine file.
-    qc_path : Path
-        Directory for the QC PNG.
     table_label : str
         Column containing cell-type labels.
     um_per_px : float
         Microns per pixel.
-    rotation : float, optional
-        If provided, skip the brute-force search and use this angle.
     gamma : float
         Gamma correction exponent applied after histogram equalisation.
     kernel_px : int
@@ -374,10 +361,13 @@ def register_cells_to_blockface(
 
     Returns
     -------
-    np.ndarray
-        The combined 3×3 affine (sptx pixel → blockface pixel).
+    cells_img : np.ndarray
+        Processed density image (histogram-equalised, gamma-corrected).
+    mask : np.ndarray
+        Processed blockface grayscale image.
+    coords_h : np.ndarray
+        Homogeneous cell coordinates (N×3) in pixel units.
     """
-    # --- density images ---
     _wm_mask, _gm_mask, ratio, _wm_d, _gm_d = compute_wm_gm_density(
         cells_table, table_label, um_per_px, kernel_size_um=200,
     )
@@ -395,7 +385,35 @@ def register_cells_to_blockface(
     coords = cells_table[["center_x", "center_y"]].values / um_per_px
     coords_h = np.hstack([coords, np.ones((coords.shape[0], 1))])
 
-    # --- coarse alignment ---
+    return cells_img, mask, coords_h
+
+
+def coarse_alignment(
+    mask: np.ndarray,
+    cells_img: np.ndarray,
+    rotation: Optional[float] = None,
+) -> Tuple[AffineTransform, np.ndarray]:
+    """Find the initial rigid alignment (rotation + translation).
+
+    When *rotation* is ``None`` a brute-force search over 360° is
+    performed; otherwise the given angle is used directly.
+
+    Parameters
+    ----------
+    mask : np.ndarray
+        Reference (blockface) image.
+    cells_img : np.ndarray
+        Moving (density) image.
+    rotation : float, optional
+        If provided, skip the brute-force search and use this angle.
+
+    Returns
+    -------
+    init_aff : AffineTransform
+        Coarse moving → fixed transform.
+    cells_img_prealigned : np.ndarray
+        *cells_img* warped onto *mask* coordinates.
+    """
     if rotation is None:
         init_aff, best_angle, best_shift, best_corr = rotation_search(
             mask, cells_img, angle_step=5,
@@ -414,7 +432,32 @@ def register_cells_to_blockface(
         cells_img, init_aff.inverse, output_shape=mask.shape,
     ).astype(np.float32)
 
-    # --- SimpleITK affine refinement ---
+    return init_aff, cells_img_prealigned
+
+
+def sitk_affine_refinement(
+    mask: np.ndarray,
+    cells_img_prealigned: np.ndarray,
+    init_aff: AffineTransform,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Refine alignment with SimpleITK affine registration.
+
+    Parameters
+    ----------
+    mask : np.ndarray
+        Fixed (blockface) image.
+    cells_img_prealigned : np.ndarray
+        Moving image after coarse alignment.
+    init_aff : AffineTransform
+        Coarse transform (used to chain with the refinement).
+
+    Returns
+    -------
+    combined_aff : np.ndarray
+        3×3 combined affine (coarse ∘ fine) in pixel coordinates.
+    cells_img_warped : np.ndarray
+        Moving image resampled with the fine transform.
+    """
     fixed_sitk = sitk.GetImageFromArray(mask.astype(np.float32))
     moving_sitk = sitk.GetImageFromArray(cells_img_prealigned.astype(np.float32))
 
@@ -466,18 +509,96 @@ def register_cells_to_blockface(
     results_aff = np.linalg.inv(results_aff)
     combined_aff = results_aff @ init_aff.params
 
+    return combined_aff, cells_img_warped
+
+
+def apply_affine_to_coordinates(
+    cells_table: pd.DataFrame,
+    coords_h: np.ndarray,
+    init_aff: AffineTransform,
+    combined_aff: np.ndarray,
+    specimen_name: str,
+    transforms_out_path: Path,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Project cell coordinates through the coarse and combined affines.
+
+    Also persists the combined affine to disk and annotates *cells_table*
+    with blockface-pixel columns.
+
+    Parameters
+    ----------
+    cells_table : pd.DataFrame
+        Cell table (modified in place with ``x_blockface_px``,
+        ``y_blockface_px`` columns).
+    coords_h : np.ndarray
+        Homogeneous coordinates (N×3) in pixel units.
+    init_aff : AffineTransform
+        Coarse transform.
+    combined_aff : np.ndarray
+        3×3 combined affine.
+    specimen_name : str
+        Identifier used for the output filename.
+    transforms_out_path : Path
+        Directory for the ``.npy`` affine file.
+
+    Returns
+    -------
+    coords_affine : np.ndarray
+        Coordinates after coarse transform only (N×2).
+    coords_warped : np.ndarray
+        Coordinates after the full combined affine (N×2).
+    """
     coords_affine = (init_aff.params @ coords_h.T).T[:, :2]
     coords_warped = (combined_aff @ coords_h.T).T[:, :2]
 
-    # --- persist outputs ---
     transforms_out_path.mkdir(parents=True, exist_ok=True)
-    qc_path.mkdir(parents=True, exist_ok=True)
     np.save(transforms_out_path / f"{specimen_name}_sptx_to_bf_affine.npy", combined_aff)
 
     cells_table["x_blockface_px"] = coords_warped[:, 0]
     cells_table["y_blockface_px"] = coords_warped[:, 1]
 
-    # --- QC figure ---
+    return coords_affine, coords_warped
+
+
+def save_qc_figure(
+    cells_img: np.ndarray,
+    cells_img_prealigned: np.ndarray,
+    cells_img_warped: np.ndarray,
+    mask: np.ndarray,
+    coords_affine: np.ndarray,
+    coords_warped: np.ndarray,
+    cells_table: pd.DataFrame,
+    table_label: str,
+    specimen_name: str,
+    qc_path: Path,
+) -> None:
+    """Generate and save a 6-panel QC figure.
+
+    Parameters
+    ----------
+    cells_img : np.ndarray
+        Original density image (microscope coordinates).
+    cells_img_prealigned : np.ndarray
+        Density image after coarse alignment.
+    cells_img_warped : np.ndarray
+        Density image after full affine alignment.
+    mask : np.ndarray
+        Blockface grayscale image.
+    coords_affine : np.ndarray
+        Coordinates after coarse transform (N×2).
+    coords_warped : np.ndarray
+        Coordinates after full combined affine (N×2).
+    cells_table : pd.DataFrame
+        Cell table (used for label colours).
+    table_label : str
+        Column containing cell-type labels.
+    specimen_name : str
+        Identifier used for the output filename.
+    qc_path : Path
+        Directory for the QC PNG.
+    """
+    qc_path.mkdir(parents=True, exist_ok=True)
+
     label_cmap = generate_random_colormap(cells_table[table_label].unique(), seed=44)
     label_color = cells_table[table_label].map(label_cmap)
 
@@ -510,6 +631,86 @@ def register_cells_to_blockface(
         a.axis("off")
     plt.savefig(qc_path / f"{specimen_name}_registration_qc.png", dpi=150)
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Main registration function
+# ---------------------------------------------------------------------------
+
+def register_cells_to_blockface(
+    cells_table: pd.DataFrame,
+    blockface_img_path: Path,
+    specimen_name: str,
+    transforms_out_path: Path,
+    qc_path: Path,
+    table_label: str = "supercluster_term_name",
+    um_per_px: float = 20,
+    rotation: Optional[float] = None,
+    gamma: float = 1.0,
+    kernel_px: int = 5,
+) -> np.ndarray:
+    """Register spatial-TX cells to a blockface image and save outputs.
+
+    The function:
+    1. Builds a WM/GM density image from cell-type labels.
+    2. Finds the best rotation (or uses a provided one) via phase correlation.
+    3. Refines the alignment with a SimpleITK affine registration.
+    4. Applies the combined affine to cell coordinates and saves it.
+    5. Generates a 6-panel QC figure.
+
+    Parameters
+    ----------
+    cells_table : pd.DataFrame
+        Cell table with ``center_x``, ``center_y``, and *table_label*.
+    blockface_img_path : Path
+        Path to the blockface PNG (RGBA expected).
+    specimen_name : str
+        Identifier used for output filenames.
+    transforms_out_path : Path
+        Directory for the ``.npy`` affine file.
+    qc_path : Path
+        Directory for the QC PNG.
+    table_label : str
+        Column containing cell-type labels.
+    um_per_px : float
+        Microns per pixel.
+    rotation : float, optional
+        If provided, skip the brute-force search and use this angle.
+    gamma : float
+        Gamma correction exponent applied after histogram equalisation.
+    kernel_px : int
+        Gaussian blur kernel size (pixels) for the density image.
+
+    Returns
+    -------
+    np.ndarray
+        The combined 3×3 affine (sptx pixel → blockface pixel).
+    """
+    # 1. density images
+    cells_img, mask, coords_h = create_density_image(
+        cells_table, blockface_img_path, table_label, um_per_px, gamma, kernel_px,
+    )
+
+    # 2. coarse alignment
+    init_aff, cells_img_prealigned = coarse_alignment(mask, cells_img, rotation)
+
+    # 3. SimpleITK affine refinement
+    combined_aff, cells_img_warped = sitk_affine_refinement(
+        mask, cells_img_prealigned, init_aff,
+    )
+
+    # 4. apply combined affine to coordinates
+    coords_affine, coords_warped = apply_affine_to_coordinates(
+        cells_table, coords_h, init_aff, combined_aff,
+        specimen_name, transforms_out_path,
+    )
+
+    # 5. QC figure
+    save_qc_figure(
+        cells_img, cells_img_prealigned, cells_img_warped, mask,
+        coords_affine, coords_warped,
+        cells_table, table_label, specimen_name, qc_path,
+    )
 
     logger.info("Saved blockface registration for %s", specimen_name)
     return combined_aff

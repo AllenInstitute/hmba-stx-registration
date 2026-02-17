@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from hmba_stx_registration import Specimen
 from hmba_stx_registration.st_to_slab import (
     barcode_transform_to_slab,
     get_specimen_name_from_barcode,
@@ -365,18 +366,6 @@ class TestProcessBarcode:
         barcode = "BARCODE001"
         date = "20260213"
 
-        metadata = pd.DataFrame({
-            "barcode": [barcode],
-            "donor": ["QM.50.002"],
-            "division": ["50"],
-            "slab": ["51"],
-            "block": ["01"],
-            "set": ["05"],
-            "section": ["02"],
-            "specimen_set_name": ["QM.50.002.CX.51.01.05"],
-            "specimen_name": [specimen_name],
-        })
-
         # Transforms dir with ST->BF affine + QC
         transforms_path = tmp_path / "transforms"
         transforms_path.mkdir()
@@ -407,13 +396,28 @@ class TestProcessBarcode:
         })
         mapping_df.to_csv(barcode_dir / f"{specimen_name}_mapping_for_registration_{date}.csv")
 
+        # Create specimen metadata JSON for Specimen construction
+        metadata_json = {
+            "barcode": barcode,
+            "donor": "QM.50.002",
+            "division": "CX",
+            "slab": "51",
+            "block": "01",
+            "set": "05",
+            "section": "02",
+        }
+        with open(barcode_dir / f"{barcode}_specimen_metadata.json", "w") as f:
+            json.dump(metadata_json, f)
+
+        specimen = Specimen(barcode, barcodes_path)
+
         # Blockface affines and slab image
         bf_affines = {specimen_name: np.eye(3)}
         slab_imgs = {51: np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)}
 
         return {
             "barcode": barcode,
-            "metadata": metadata,
+            "specimen": specimen,
             "bf_affines": bf_affines,
             "slab_imgs": slab_imgs,
             "transforms_path": transforms_path,
@@ -425,12 +429,10 @@ class TestProcessBarcode:
     def test_output_files_created(self, barcode_env):
         env = barcode_env
         result = process_barcode(
-            barcode=env["barcode"],
-            metadata_df=env["metadata"],
+            specimen=env["specimen"],
             bf_affines=env["bf_affines"],
             slab_imgs=env["slab_imgs"],
             transforms_path=env["transforms_path"],
-            barcodes_path=env["barcodes_path"],
             table_label="supercluster_term_name",
             um_per_px=20,
             date=env["date"],
@@ -476,12 +478,10 @@ class TestProcessBarcode:
     def test_run_manifest_lists_all_outputs(self, barcode_env):
         env = barcode_env
         process_barcode(
-            barcode=env["barcode"],
-            metadata_df=env["metadata"],
+            specimen=env["specimen"],
             bf_affines=env["bf_affines"],
             slab_imgs=env["slab_imgs"],
             transforms_path=env["transforms_path"],
-            barcodes_path=env["barcodes_path"],
             table_label="supercluster_term_name",
             um_per_px=20,
             date=env["date"],
