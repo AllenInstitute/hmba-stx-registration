@@ -188,6 +188,11 @@ def barcode_transform_to_slab(
         return {
             "source": specimen_name,
             "subset_label": subset_label,
+            "source_unit": "micrometer",
+            "source_origin": "bottomleft",
+            "target_unit": "millimeter",
+            "target_origin": "topleft",
+            "axis_order": "xy",
             "transform": sptx_to_slab_mm.tolist(),
         }
 
@@ -454,6 +459,7 @@ def process_barcode(
 
             suffix = f"_{subset_label}" if subset_label != "nan" else ""
             qc_filename = f"{specimen_name}{suffix}_coarse_registration_slab_qc_{date}.png"
+            output_files.append(qc_filename)
             qc_out = results_path / qc_filename
             plot_coarse_registration_slab_qc(
                 slab_imgs[slab_id], transformed_mm, cur_label_color, mm_per_px, qc_out,

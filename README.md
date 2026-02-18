@@ -54,20 +54,22 @@ This document describes the inputs, outputs, and assumptions of the pipeline. Th
     ```json
     {
         "schema_version": "1.0",
-        "hmba_stx_registration_version": "0.1.0",
-        "date": "20260213",
-        "specimen_name": "QM24.50.002.CX.51.01.05.02",
+        "hmba_stx_registration_version": "0.1",
+        "date": "20260217",
+        "specimen_name": "QM24.50.002.CX.45.05.01.02",
         "input_files": [
-            "QM24.50.002.CX.51.01.05.02_mapping_for_registration_20260213.csv"
+            "QM24.50.002.CX.45.05.01.02_mapping_for_registration_20250929.csv",
+            "QM24.50.002.CX.45.05.01.02_column_names_for_registration_20250929.json"
         ],
         "output_files": [
-            "QM24.50.002.CX.51.01.05.02_coarse_transform_to_slab_mm_20260213.json",
-            "QM24.50.002.CX.51.01.05.02_registration_block_qc_20260213.png",
-            "QM24.50.002.CX.51.01.05.02_coarse_registration_slab_qc_20260213.png"
+            "QM24.50.002.CX.45.05.01.02_registration_block_qc_20260217.png",
+            "QM24.50.002.CX.45.05.01.02_coarse_registration_slab_qc_20260217.png",
+            "QM24.50.002.CX.45.05.01.02_coarse_registration_slab_qc_20260217.png",
+            "QM24.50.002.CX.45.05.01.02_coarse_transform_to_slab_mm_20260217.json"
         ],
         "args": {
             "um_per_px": 20,
-            "table_label": "supercluster_term_name"
+            "table_label": "supercluster_term_label"
         }
     }
     ```

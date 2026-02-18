@@ -197,10 +197,17 @@ class TestTransformJsonSchema:
         assert isinstance(single_transform, list)
 
     def test_entry_has_required_keys(self, single_transform):
+        required_keys = {
+            "source", "subset_label", "source_unit", "source_origin",
+            "target_unit", "target_origin", "axis_order", "transform",
+        }
         for entry in single_transform:
-            assert "source" in entry
-            assert "subset_label" in entry
-            assert "transform" in entry
+            assert required_keys.issubset(entry.keys())
+            assert entry["source_unit"] == "micrometer"
+            assert entry["source_origin"] == "bottomleft"
+            assert entry["target_unit"] == "millimeter"
+            assert entry["target_origin"] == "topleft"
+            assert entry["axis_order"] == "xy"
 
     def test_transform_is_3x3(self, single_transform):
         for entry in single_transform:
@@ -453,6 +460,11 @@ class TestProcessBarcode:
         assert isinstance(tfm_data, list)
         assert "source" in tfm_data[0]
         assert "subset_label" in tfm_data[0]
+        assert "source_unit" in tfm_data[0]
+        assert "source_origin" in tfm_data[0]
+        assert "target_unit" in tfm_data[0]
+        assert "target_origin" in tfm_data[0]
+        assert "axis_order" in tfm_data[0]
         assert "transform" in tfm_data[0]
 
         # Output #2: run manifest JSON (new schema)
@@ -475,6 +487,10 @@ class TestProcessBarcode:
         slab_qc = results_dir / f"{sn}_coarse_registration_slab_qc_{dt}.png"
         assert slab_qc.exists()
 
+        # slab QC filename should appear in result["output_files"]
+        qc_filename = f"{sn}_coarse_registration_slab_qc_{dt}.png"
+        assert qc_filename in result["output_files"]
+
     def test_run_manifest_lists_all_outputs(self, barcode_env):
         env = barcode_env
         process_barcode(
@@ -492,6 +508,12 @@ class TestProcessBarcode:
         run_data = json.loads(
             (results_dir / f"{env['specimen_name']}_run_manifest_{env['date']}.json").read_text(),
         )
+        # slab QC filename should be listed in the manifest
+        sn = env["specimen_name"]
+        dt = env["date"]
+        qc_filename = f"{sn}_coarse_registration_slab_qc_{dt}.png"
+        assert qc_filename in run_data["output_files"]
+
         # All output files mentioned in manifest should actually exist
         for fname in run_data["output_files"]:
             assert (results_dir / fname).exists(), f"Output file {fname} listed in manifest but missing"
