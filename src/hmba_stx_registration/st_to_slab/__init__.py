@@ -330,20 +330,22 @@ def process_barcode(
     bf_affines: Dict[str, np.ndarray],
     slab_imgs: Dict[int, np.ndarray],
     transforms_path: Path,
+    table_label: str,
     um_per_px: float,
-    date: str,
+    mapping_date: str,
+    output_date: str,
     version: str,
     sync_to_s3: bool = False,
     sync_dryrun: bool = True,
 ) -> Optional[dict]:
     """Process one barcode end-to-end, producing all Stage-2 outputs.
 
-    Outputs written to ``{base_barcodes_path}/{barcode}/registration_results_{date}/``:
+    Outputs written to ``{base_barcodes_path}/{barcode}/registration_results_{output_date}/``:
 
-    1. ``{section}_coarse_transform_to_slab_mm_{date}.json``
-    2. ``{section}_registration_block_qc_{date}.png``
-    3. ``{section}_coarse_registration_slab_qc_{date}.png``  (per subset)
-    4. ``{section}_run_manifest_{date}.json``
+    1. ``{section}_coarse_transform_to_slab_mm_{output_date}.json``
+    2. ``{section}_registration_block_qc_{output_date}.png``
+    3. ``{section}_coarse_registration_slab_qc_{output_date}.png``  (per subset)
+    4. ``{section}_run_manifest_{output_date}.json``
 
     Parameters
     ----------
@@ -356,10 +358,14 @@ def process_barcode(
         Slab images keyed by integer slab id.
     transforms_path : Path
         Directory with ``*_sptx_to_bf_affine.npy`` files and ``qc/`` subfolder.
+    table_label : str
+        Column name in the cell table to use for coloring points in the slab QC.
     um_per_px : float
         Microns per pixel.
-    date : str
-        Date string (``yyyymmdd``) for output filenames.
+    mapping_date: str
+        mapping_date string (``yyyymmdd``) for input filenames.
+    output_date : str
+        output_date string (``yyyymmdd``) for output filenames.
     version : str
         Version string stored in the run manifest (e.g. ``"0.1.0"``).
     sync_to_s3 : bool
@@ -378,7 +384,7 @@ def process_barcode(
     barcode_path = specimen.barcode_path
 
     mm_per_px = um_per_px / 1000
-    results_path = barcode_path / f"registration_results_{date}"
+    results_path = barcode_path / f"registration_results_{output_date}"
     input_files: List[Path] = []
     output_files: List[Path] = []
 
@@ -401,23 +407,34 @@ def process_barcode(
         logger.exception("[%s] Failed to compute transforms", barcode)
         return None
 
-    # 2. Load cell table
+    # 2. Load cell table via Specimen
     try:
         slab_id = int(specimen.metadata["slab"])
-        table_path = next(barcode_path.glob(f"{specimen_name}_mapping_for_registration_*.csv"))
-        input_files.append(table_path)
 
+        # Track input files for the run manifest (Specimen loads these lazily)
+        try:
+            table_path = next(
+                barcode_path.glob(f"{specimen_name}_mapping_for_registration_{mapping_date}.csv"),
+            )
+            input_files.append(table_path)
+        except StopIteration:
+            logger.exception(
+                "[%s] No mapping_for_registration CSV found for date %s",
+                barcode, mapping_date,
+            )
+            return None
+
+        # Prefer the column label from the specimen's column-names JSON; fall
+        # back to the table_label argument when the JSON is absent.
         try:
             col_names_path = next(
                 barcode_path.glob(f"{specimen_name}_column_names_for_registration_*.json"),
             )
-            col_names = json.load(open(col_names_path, 'r'))
-            table_label = col_names[0]
             input_files.append(col_names_path)
         except StopIteration:
             logger.info("[%s] No column_names_for_registration JSON found", barcode)
 
-        table = pd.read_csv(table_path, index_col=0)
+        table = specimen.cells_table
         label_cmap = generate_random_colormap(table[table_label].unique(), seed=44)
         label_color = table[table_label].map(label_cmap)
     except Exception:
@@ -430,7 +447,7 @@ def process_barcode(
     try:
         st2block_qc_src = transforms_path / "qc" / f"{specimen_name}_registration_qc.png"
         if st2block_qc_src.exists():
-            st2block_qc_dst = results_path / f"{specimen_name}_registration_block_qc_{date}.png"
+            st2block_qc_dst = results_path / f"{specimen_name}_registration_block_qc_{output_date}.png"
             shutil.copy(st2block_qc_src, st2block_qc_dst)
             output_files.append(st2block_qc_dst)
             logger.info("[%s] Copied block QC → %s", barcode, st2block_qc_dst.name)
@@ -458,7 +475,7 @@ def process_barcode(
             transformed_mm = transform_coordinates(coords.values, tfm)
 
             suffix = f"_{subset_label}" if subset_label != "nan" else ""
-            qc_filename = f"{specimen_name}{suffix}_coarse_registration_slab_qc_{date}.png"
+            qc_filename = f"{specimen_name}{suffix}_coarse_registration_slab_qc_{output_date}.png"
             output_files.append(qc_filename)
             qc_out = results_path / qc_filename
             plot_coarse_registration_slab_qc(
@@ -472,7 +489,7 @@ def process_barcode(
 
     # 5. Save transform manifest JSON
     try:
-        manifest_path = results_path / f"{specimen_name}_coarse_transform_to_slab_mm_{date}.json"
+        manifest_path = results_path / f"{specimen_name}_coarse_transform_to_slab_mm_{output_date}.json"
         with open(manifest_path, "w") as fh:
             json.dump(transform_meta, fh, indent=4)
         output_files.append(manifest_path)
@@ -482,10 +499,10 @@ def process_barcode(
 
     # 6. Run manifest
     try:
-        run_manifest_path = results_path / f"{specimen_name}_run_manifest_{date}.json"
+        run_manifest_path = results_path / f"{specimen_name}_run_manifest_{output_date}.json"
         create_run_manifest_json(
             ver=version,
-            date=date,
+            date=output_date,
             specimen_name=specimen_name,
             input_files=input_files,
             output_files=output_files,
@@ -502,7 +519,7 @@ def process_barcode(
             sync_dir_to_s3(
                 local_dir=results_path,
                 bucket="hmba-macaque-wg-802451596237-us-west-2",
-                s3_dir=f"hmba_aim_2/Xenium/QM24.50.002/{barcode}/registration_results_{date}",
+                s3_dir=f"hmba_aim_2/Xenium/QM24.50.002/{barcode}/registration_results_{output_date}",
                 profile="storage",
                 dryrun=sync_dryrun,
                 delete=False,

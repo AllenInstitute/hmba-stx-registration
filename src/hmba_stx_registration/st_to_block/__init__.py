@@ -47,7 +47,7 @@ import SimpleITK as sitk
 from skimage.exposure import equalize_hist
 from skimage.registration import phase_cross_correlation
 from skimage.transform import AffineTransform, warp
-
+from scipy.ndimage import shift as ndi_shift
 from ..utils import generate_random_colormap
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,8 @@ WM_TYPES = [
     "Oligodendrocyte",
     "Oligodendrocyte precursor",
     "Committed oligodendrocyte precursor",
+    "400 OPC_NN",
+    "401 Oligo_NN",
 ]
 
 GM_TYPES = [
@@ -70,6 +72,31 @@ GM_TYPES = [
     "MGE interneuron",
     "CGE interneuron",
     "LAMP5-LHX6 and Chandelier",
+    # Deep-layer near-projecting
+    "037 L5-NP-CTX_Glut",
+    # Deep-layer corticothalamic and 6b
+    "035 L6-CT-CTX_Glut",
+    "034 L6b-CTX_Glut",
+    # Deep-layer IT
+    "004 L5-IT-CTX_Glut",
+    "005 L6-IT-CTX_Glut",
+    "006 L5/6-IT-TPE-ENT_Glut",
+    # Upper-layer IT
+    "001 L2/3-IT-RSP_Glut",
+    "002 L2/3-IT-CTX_Glut",
+    "003 L4/5-IT-CTX_Glut",
+    "022 L4-RSP-ACA_Glut",
+    # MGE
+    "060 Pvalb_Gaba",
+    "061 Sst_Gaba",
+    "062 Sst:Chodl_Gaba",
+    # CGE
+    "054 Vip_Gaba",
+    "055 Sncg_Gaba",
+    "057 Lamp5_Gaba",
+    # LAMP5-LHX6 + Chandelier
+    "058 Lamp5-Lhx6_Gaba",
+    "059 Pvalb-chandelier_Gaba",
 ]
 
 
@@ -105,6 +132,11 @@ def compute_wm_gm_density(
     table["is_wm"] = table[table_label].isin(WM_TYPES).astype(float)
     table["is_gm"] = table[table_label].isin(GM_TYPES).astype(float)
 
+    # check if either WM or GM types are present, if not raise an error
+    if table["is_wm"].sum() == 0:
+        raise ValueError("No WM cell types found in the table. Check your table_label and cell types.")
+    if table["is_gm"].sum() == 0:
+        raise ValueError("No GM cell types found in the table. Check your table_label and cell types.")
     x_px = (table["center_x"].values / um_per_px).astype(int)
     y_px = (table["center_y"].values / um_per_px).astype(int)
     h, w = y_px.max() + 1, x_px.max() + 1
@@ -307,27 +339,7 @@ def rotate_and_phase_correlate(
         cval=0,
     )
 
-    shift, _error, _diffphase = phase_cross_correlation(
-        fixed.astype(np.float64),
-        rotated.astype(np.float64),
-        upsample_factor=upsample_factor,
-    )
-
-    T_shift = AffineTransform(translation=np.array([shift[1], shift[0]]))
-
-    combined_affine = AffineTransform(
-        matrix=T_shift.params @ rotation_transform.params,
-    )
-
-    aligned = warp(
-        moving,
-        combined_affine.inverse,
-        output_shape=fixed.shape,
-        mode="constant",
-        cval=0,
-    )
-
-    return combined_affine, aligned.astype(moving.dtype), tuple(shift)
+    return rotation_transform, rotated.astype(moving.dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -423,10 +435,10 @@ def coarse_alignment(
             best_angle, best_shift, best_corr,
         )
     else:
-        init_aff, _, best_shift = rotate_and_phase_correlate(
+        init_aff, _ = rotate_and_phase_correlate(
             mask, cells_img, rotation, upsample_factor=10,
         )
-        logger.info("Applied rotation: %s°, shift: %s", rotation, best_shift)
+        logger.info("Applied rotation: %s°", rotation)
 
     cells_img_prealigned = warp(
         cells_img, init_aff.inverse, output_shape=mask.shape,

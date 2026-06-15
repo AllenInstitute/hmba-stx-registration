@@ -20,6 +20,46 @@ import xmltodict
 # SVG file I/O
 # ---------------------------------------------------------------------------
 
+def _remove_duplicate_attrs(xml_str: str) -> str:
+    """Remove duplicate XML attributes from each tag, keeping the first occurrence.
+
+    Some SVG files produced by third-party tools contain duplicate attributes
+    (e.g. two ``style`` entries on the same element).  Python's expat-based
+    XML parser — used internally by *xmltodict* — raises an ``ExpatError`` when
+    it encounters them.  This function strips any repeat occurrences so the
+    string can be parsed cleanly.
+
+    Parameters
+    ----------
+    xml_str : str
+        Raw XML/SVG content.
+
+    Returns
+    -------
+    str
+        XML content with duplicate attributes removed (first occurrence kept).
+    """
+
+    def _dedupe_tag(match: re.Match) -> str:
+        tag_str = match.group(0)
+        seen: set = set()
+
+        def _keep_first(m2: re.Match) -> str:
+            attr_name = m2.group(1)
+            if attr_name in seen:
+                return ""
+            seen.add(attr_name)
+            return m2.group(0)
+
+        return re.sub(
+            r'([\w:.-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\')',
+            _keep_first,
+            tag_str,
+        )
+
+    return re.sub(r"<[^>]+>", _dedupe_tag, xml_str, flags=re.DOTALL)
+
+
 def load_svg_to_dict(file_path: Path) -> dict:
     """Parse an SVG file into a nested dictionary via *xmltodict*.
 
@@ -34,7 +74,9 @@ def load_svg_to_dict(file_path: Path) -> dict:
         Nested dictionary representation of the SVG XML.
     """
     with open(file_path, "r") as fh:
-        return xmltodict.parse(fh.read())
+        content = fh.read()
+    content = _remove_duplicate_attrs(content)
+    return xmltodict.parse(content)
 
 
 # ---------------------------------------------------------------------------

@@ -25,33 +25,88 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Colourmap helper (reimplemented – original source no longer available)
+# Colourmap helper
 # ---------------------------------------------------------------------------
 
 def generate_random_colormap(
     labels: Sequence[str],
     seed: int = 42,
+    palette: str = "tab20",
 ) -> Dict[str, str]:
     """Create a reproducible mapping from categorical *labels* to hex colours.
+
+    Colours are drawn from a qualitative matplotlib palette (default
+    ``"tab20"``) using **bit-reversal striding** so that labels appearing
+    in adjacent positions of the input sequence land on maximally-separated
+    slots of the palette.  This makes neighbouring categories in the legend
+    (and in the underlying data ordering) easy to tell apart visually.
+
+    The *seed* controls a deterministic rotation of the stride so different
+    seeds produce different mappings while preserving the spread property.
 
     Parameters
     ----------
     labels : sequence of str
         Unique label values.
     seed : int
-        Random seed for reproducibility.
+        Seed controlling the deterministic rotation of palette assignments.
+    palette : str
+        Name of a matplotlib qualitative colormap (e.g. ``"tab20"``,
+        ``"Set3"``, ``"Paired"``).
 
     Returns
     -------
     dict
         ``{label: "#RRGGBB"}`` mapping.
     """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import to_hex
+
+    labels_list = list(labels)
+    K = len(labels_list)
+    if K == 0:
+        return {}
+
+    # Materialise a pool of colours from the qualitative palette.  Use the
+    # palette's native size when possible so consecutive picks land on
+    # canonical (non-interpolated) palette entries; expand only when K
+    # exceeds the native size, accepting matplotlib's interpolation.
+    cmap_mpl = plt.get_cmap(palette)
+    pool_size = max(K, getattr(cmap_mpl, "N", K))
+    pool = plt.get_cmap(palette, pool_size)(np.arange(pool_size))
+
+    # Bit-reversal striding: round pool_size up to the next power of two,
+    # then for each label index i emit the bit-reversed integer.  This
+    # interleaves the palette so consecutive labels land on slots that are
+    # ~pool_size/2 apart, then ~pool_size/4, etc. — provably maximising the
+    # minimum stride between any pair of consecutive labels.
+    n_bits = max(1, int(np.ceil(np.log2(pool_size))))
+    width = 1 << n_bits
+
+    def _bit_reverse(i: int, bits: int) -> int:
+        out = 0
+        for _ in range(bits):
+            out = (out << 1) | (i & 1)
+            i >>= 1
+        return out
+
+    # Seed-controlled rotation: shifts the whole bit-reversed sequence so
+    # different seeds produce different (but equally well-spread) mappings.
     rng = np.random.RandomState(seed)
-    cmap: Dict[str, str] = {}
-    for label in labels:
-        r, g, b = rng.randint(0, 256, size=3)
-        cmap[label] = f"#{r:02x}{g:02x}{b:02x}"
-    return cmap
+    rotation = int(rng.randint(0, width)) if width > 1 else 0
+
+    order: List[int] = []
+    i = 0
+    while len(order) < K:
+        slot = _bit_reverse((i + rotation) % width, n_bits)
+        if slot < pool_size:
+            order.append(slot)
+        i += 1
+
+    return {
+        label: to_hex(pool[order[i]], keep_alpha=False)
+        for i, label in enumerate(labels_list)
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -259,3 +314,58 @@ def sync_dir_to_s3(
     except subprocess.CalledProcessError as exc:
         logger.error("aws s3 sync failed (exit %d)", exc.returncode)
         raise
+
+
+def upload_plots_to_s3(
+    png_paths: List[Union[str, Path]],
+    bucket: str,
+    s3_dir: str,
+    profile: str,
+    dryrun: bool = False,
+) -> List[str]:
+    """Upload PNG plot files to S3 with ``ContentType: image/png``.
+
+    Setting the content-type allows the files to be viewed directly in the
+    AWS S3 web portal without downloading.
+
+    Parameters
+    ----------
+    png_paths : list of str or Path
+        Local PNG files to upload.
+    bucket : str
+        S3 bucket name.
+    s3_dir : str
+        Key prefix in the bucket (no trailing slash needed).
+    profile : str
+        AWS CLI profile name.
+    dryrun : bool
+        Log the commands without executing them.
+
+    Returns
+    -------
+    list of str
+        S3 URIs for each uploaded file.
+    """
+    s3_uris: List[str] = []
+    for path in png_paths:
+        path = Path(path)
+        s3_key = f"{s3_dir.strip('/')}/{path.name}"
+        s3_uri = f"s3://{bucket.rstrip('/')}/{s3_key}"
+        cmd = (
+            f"aws s3 cp {shlex.quote(str(path))} "
+            f"{shlex.quote(s3_uri)} "
+            f"--content-type image/png "
+            f"--profile {shlex.quote(profile)} "
+            "--only-show-errors"
+        )
+        if dryrun:
+            logger.info("[dryrun] %s", cmd)
+        else:
+            logger.info("Uploading %s → %s", path.name, s3_uri)
+            try:
+                subprocess.run(cmd, shell=True, check=True)
+            except subprocess.CalledProcessError as exc:
+                logger.error("Upload failed for %s (exit %d)", path.name, exc.returncode)
+                raise
+        s3_uris.append(s3_uri)
+    return s3_uris
