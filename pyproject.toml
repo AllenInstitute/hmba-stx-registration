@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hmba_stx_registration"
+version = "0.3"
+description = "Tools for registration of HMBA data to Allen Brain Atlas"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Mike Huang", email = "mike.huang@alleninstitute.org" },
+]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "opencv-python",
+    "scikit-image",
+    "scikit-learn",
+    "SimpleITK",
+    "xmltodict",
+]
+
+[project.optional-dependencies]
+# Block-image segmentation pipeline (src/hmba_stx_registration/block_processing).
+# Requires PyTorch + Segment Anything. For NVIDIA GPUs (incl. RTX 50-series /
+# sm_120), install with the cu130 wheel index, e.g.:
+#   pip install -e .[block-processing] --extra-index-url https://download.pytorch.org/whl/cu130
+block-processing = [
+    "torch>=2.12",
+    "torchvision>=0.27",
+    "Pillow",
+    "segment-anything @ git+https://github.com/facebookresearch/segment-anything.git",
+]
+
+[project.urls]
+Repository = "https://github.com/AllenInstitute/hmba-stx-registration"
+
+[tool.setuptools.packages.find]
+where = ["src"]

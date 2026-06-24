@@ -20,11 +20,11 @@ The main goal is to generate a JSON file containing a 2D affine transformation m
 
 ## Development Workflow
 
-1.  **Installation**: Set up a virtual environment and install dependencies:
+1.  **Installation**: Set up a virtual environment and install the package:
     ```bash
     python -m venv .venv
     source .venv/bin/activate
-    pip install -r requirements.txt
+    pip install -e .
     ```
 
 2.  **Testing**: This project currently lacks a test suite. When adding new features, please include corresponding tests in the `tests/` directory.

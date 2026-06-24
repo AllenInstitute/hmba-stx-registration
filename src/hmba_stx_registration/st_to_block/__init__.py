@@ -62,6 +62,15 @@ WM_TYPES = [
     "Committed oligodendrocyte precursor",
     "400 OPC_NN",
     "401 Oligo_NN",
+    # --- HMBA cell-type names ---
+    # Oligodendrocytes
+    "Oligo_1",
+    "Oligo_2",
+    # Oligodendrocyte precursors
+    "OPC",
+    # Committed oligodendrocyte precursors
+    "COPC",
+    "OPC-COPC",
 ]
 
 GM_TYPES = [
@@ -97,6 +106,53 @@ GM_TYPES = [
     # LAMP5-LHX6 + Chandelier
     "058 Lamp5-Lhx6_Gaba",
     "059 Pvalb-chandelier_Gaba",
+    # --- HMBA cell-type names ---
+    # Deep-layer near-projecting / NP
+    "SUB_NP_Glut",
+    "Sub_Deep_NP/CT",
+    # Deep-layer corticothalamic and 6b
+    "L6_CT_Glut",
+    "Cx_L6b_Glut",
+    "EC_L6b/CT_Glut",
+    "L6b_Glut",
+    "SUB_CT_Glut",
+    # Deep-layer IT
+    "Cx_L5_IT_Glut",
+    "Cx_L6_IT_Glut",
+    "EC_L5_IT_Glut",
+    "EC_L6_IT_Glut",
+    "EC_L6_IT",
+    "L6_Car3_Glut",
+    "V1C_L4_IT_Glut",
+    # Upper-layer IT
+    "Cx_L2_IT_Glut",
+    "Cx_L4_IT_Glut",
+    "EC_L2_IT_Glut",
+    "EC_L3_IT_Glut",
+    "V1C_L2_IT",
+    "V1C_L2/3_IT_Glut",
+    "PrS/PaS_Upper_IT_Glut",
+    "PrS/PaS_L2_IT_Glut",
+    "PrS-EC_L2_IT",
+    "ProS_Pyr_Glut",
+    # MGE
+    "MGE_GABA",
+    "MGE_LAMP5_GABA",
+    "PVALB_GABA",
+    "SST_GABA",
+    "SST_Chodl_GABA",
+    # CGE
+    "CGE_LAMP5_GABA",
+    "VIP_GABA",
+    "SNCG_GABA",
+    "VIP_PENK_GABA",
+    "VIP_SNCG_GABA",
+    "LAMP5_CXCL14_GABA",
+    "LAMP5_SNCG_GABA",
+    "LAMP5_PAX6_GABA",
+    "HTR3A_Basket_GABA",
+    # LAMP5-LHX6 + Chandelier
+    "PVALB_Chandelier_GABA",
 ]
 
 
